@@ -37,7 +37,7 @@ open class FirBodyResolveTransformer(
     private val controlFlowStatementsTransformer = FirControlFlowStatementsResolveTransformer(this)
 
     override fun transformFile(file: FirFile, data: ResolutionMode): CompositeTransformResult<FirFile> {
-        @UseExperimental(PrivateForInline::class)
+        @OptIn(PrivateForInline::class)
         components.file = file
         packageFqName = file.packageFqName
         return withScopeCleanup(components.topLevelScopes) {

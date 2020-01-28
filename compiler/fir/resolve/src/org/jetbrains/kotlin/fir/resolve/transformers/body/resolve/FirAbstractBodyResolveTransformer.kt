@@ -50,7 +50,7 @@ abstract class FirAbstractBodyResolveTransformer(phase: FirResolvePhase) : FirAb
         }
     }
 
-    @UseExperimental(PrivateForInline::class)
+    @OptIn(PrivateForInline::class)
     internal inline fun <T> withFullBodyResolve(crossinline l: () -> T): T {
         if (!implicitTypeOnly) return l()
         implicitTypeOnly = false
@@ -137,11 +137,11 @@ abstract class FirAbstractBodyResolveTransformer(phase: FirResolvePhase) : FirAb
         override var container: FirDeclaration
             get() = containerIfAny!!
             private set(value) {
-                @UseExperimental(PrivateForInline::class)
+                @OptIn(PrivateForInline::class)
                 containerIfAny = value
             }
 
-        @UseExperimental(PrivateForInline::class)
+        @OptIn(PrivateForInline::class)
         inline fun <T> withContainer(declaration: FirDeclaration, crossinline f: () -> T): T {
             val prevContainer = containerIfAny
             containerIfAny = declaration
@@ -150,7 +150,7 @@ abstract class FirAbstractBodyResolveTransformer(phase: FirResolvePhase) : FirAb
             return result
         }
 
-        @UseExperimental(PrivateForInline::class)
+        @OptIn(PrivateForInline::class)
         inline fun <T> withImplicitReceiverStack(implicitReceiverStack: ImplicitReceiverStack, f: () -> T): T {
             val existedStack = this.implicitReceiverStack
             this.implicitReceiverStack = implicitReceiverStack
