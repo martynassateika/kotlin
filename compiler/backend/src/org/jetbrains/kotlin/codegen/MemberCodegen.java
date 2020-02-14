@@ -20,6 +20,7 @@ import org.jetbrains.kotlin.codegen.inline.SourceMapper;
 import org.jetbrains.kotlin.codegen.state.GenerationState;
 import org.jetbrains.kotlin.codegen.state.KotlinTypeMapper;
 import org.jetbrains.kotlin.codegen.state.TypeMapperUtilsKt;
+import org.jetbrains.kotlin.config.ApiVersion;
 import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.descriptors.annotations.AnnotatedImpl;
 import org.jetbrains.kotlin.descriptors.annotations.Annotations;
@@ -642,6 +643,8 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
 
         if (!state.getClassBuilderMode().generateBodies) return;
 
+        boolean generateClassIntCtorCall = state.getLanguageVersionSettings().getApiVersion().compareTo(ApiVersion.KOTLIN_1_4) >= 0;
+
         InstructionAdapter iv = createOrGetClInitCodegen().v;
         iv.iconst(delegatedProperties.size());
         iv.newarray(K_PROPERTY_TYPE);
@@ -658,14 +661,29 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
             iv.anew(implType);
             iv.dup();
 
-            // TODO: generate the container once and save to a local field instead (KT-10495)
-            ClosureCodegen.generateCallableReferenceDeclarationContainer(iv, property, state);
+            List<Type> superCtorArgs = new ArrayList<>();
+            if (generateClassIntCtorCall) {
+                ClosureCodegen.generateCallableReferenceDeclarationContainerClass(iv, property, state);
+                superCtorArgs.add(JAVA_CLASS_TYPE);
+            } else {
+                // TODO: generate the container once and save to a local field instead (KT-10495)
+                ClosureCodegen.generateCallableReferenceDeclarationContainer(iv, property, state);
+                superCtorArgs.add(K_DECLARATION_CONTAINER_TYPE);
+            }
+
             iv.aconst(property.getName().asString());
             PropertyReferenceCodegen.generateCallableReferenceSignature(iv, property, state);
+            superCtorArgs.add(JAVA_STRING_TYPE);
+            superCtorArgs.add(JAVA_STRING_TYPE);
+
+            if (generateClassIntCtorCall) {
+                iv.aconst(ClosureCodegen.isTopLevelCallableReference(property) ? 1 : 0);
+                superCtorArgs.add(Type.INT_TYPE);
+            }
 
             iv.invokespecial(
                     implType.getInternalName(), "<init>",
-                    Type.getMethodDescriptor(Type.VOID_TYPE, K_DECLARATION_CONTAINER_TYPE, JAVA_STRING_TYPE, JAVA_STRING_TYPE), false
+                    Type.getMethodDescriptor(Type.VOID_TYPE, superCtorArgs.toArray(new Type[0])), false
             );
             Method wrapper = PropertyReferenceCodegen.getWrapperMethodForPropertyReference(property, receiverCount);
             iv.invokestatic(REFLECTION, wrapper.getName(), wrapper.getDescriptor(), false);
