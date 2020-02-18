@@ -18,6 +18,7 @@ package org.jetbrains.kotlin.idea.stubindex.resolve
 
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.ModificationTracker
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.stubs.StubIndex
 import org.jetbrains.kotlin.analyzer.ModuleInfo
@@ -29,6 +30,7 @@ import org.jetbrains.kotlin.idea.caches.trackers.KotlinCodeBlockModificationList
 import org.jetbrains.kotlin.idea.stubindex.KotlinExactPackagesIndex
 import org.jetbrains.kotlin.idea.stubindex.PackageIndexUtil
 import org.jetbrains.kotlin.idea.stubindex.SubpackagesIndexService
+import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.lazy.data.KtClassLikeInfo
@@ -95,8 +97,7 @@ class PluginDeclarationProviderFactory(
     }
 
     override fun diagnoseMissingPackageFragment(fqName: FqName, file: KtFile?) {
-
-        val subpackagesIndex = SubpackagesIndexService.getInstance(project)
+        val subpackagesIndex = SubpackagesIndexService.getInstance(project) ?: return
         val moduleSourceInfo = moduleInfo as? ModuleSourceInfo
         val packageExists = PackageIndexUtil.packageExists(fqName, indexedFilesScope, project)
         val spiPackageExists = subpackagesIndex.packageExists(fqName)
@@ -104,12 +105,18 @@ class PluginDeclarationProviderFactory(
         val cachedPackageExists =
             moduleSourceInfo?.let { ServiceManager.getService(project, PerModulePackageCacheService::class.java).packageExists(fqName, it) }
         val moduleModificationCount = moduleSourceInfo?.createModificationTracker()?.modificationCount
+        val kotlinOutOfCodeBlockTracker = runReadAction {
+            if (!project.isDisposed)
+                KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+            else
+                ModificationTracker.NEVER_CHANGED
+        }
 
         val common = """
                 packageExists = $packageExists, cachedPackageExists = $cachedPackageExists,
                 oldPackageExists = $oldPackageExists,
                 SPI.packageExists = $spiPackageExists, SPI = $subpackagesIndex,
-                OOCB count = ${KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker.modificationCount}
+                OOCB count = ${kotlinOutOfCodeBlockTracker.modificationCount}
                 moduleModificationCount = $moduleModificationCount
             """.trimIndent()
 

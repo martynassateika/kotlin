@@ -13,15 +13,24 @@ import com.intellij.openapi.util.ModificationTracker
 import com.intellij.util.CommonProcessors
 import org.jetbrains.annotations.TestOnly
 import org.jetbrains.kotlin.caches.project.cacheByClassInvalidatingOnRootModifications
+import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.psi.KtFile
 
 class KotlinModuleOutOfCodeBlockModificationTracker private constructor(private val module: Module, private val updater: Updater) :
     ModificationTracker {
 
     constructor(module: Module) :
-            this(module, KotlinCodeBlockModificationListener.getInstance(module.project).perModuleOutOfCodeBlockTrackerUpdater)
+            this(module,
+                 runReadAction {
+                     KotlinCodeBlockModificationListener.getInstance(module.project).perModuleOutOfCodeBlockTrackerUpdater
+                 })
 
-    private val kotlinOutOfCodeBlockTracker = KotlinCodeBlockModificationListener.getInstance(module.project).kotlinOutOfCodeBlockTracker
+    private val kotlinOutOfCodeBlockTracker = runReadAction {
+        if (!module.project.isDisposed)
+            KotlinCodeBlockModificationListener.getInstance(module.project).kotlinOutOfCodeBlockTracker
+        else
+            ModificationTracker.NEVER_CHANGED
+    }
 
     private val dependencies by lazy {
         // Avoid implicit capturing for this to make CachedValueStabilityChecker happy
@@ -60,14 +69,21 @@ class KotlinModuleOutOfCodeBlockModificationTracker private constructor(private 
     companion object {
         @TestOnly
         fun getModificationCount(module: Module): Long {
-            val updater = KotlinCodeBlockModificationListener.getInstance(module.project).perModuleOutOfCodeBlockTrackerUpdater
+            val updater = runReadAction {
+                KotlinCodeBlockModificationListener.getInstance(module.project).perModuleOutOfCodeBlockTrackerUpdater
+            }
             return updater.getModificationCount(module)
         }
     }
 
     internal class Updater(project: Project) {
         private val kotlinOfOfCodeBlockTracker by lazy {
-            KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+            runReadAction {
+                if (!project.isDisposed)
+                    KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+                else
+                    ModificationTracker.NEVER_CHANGED
+            }
         }
 
         private val perModuleModCount = mutableMapOf<Module, Long>()

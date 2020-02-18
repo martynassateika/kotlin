@@ -11,6 +11,7 @@ import com.intellij.psi.util.CachedValuesManager
 import org.jetbrains.kotlin.idea.caches.trackers.KotlinCodeBlockModificationListener
 import org.jetbrains.kotlin.idea.stubindex.KotlinProbablyNothingFunctionShortNameIndex
 import org.jetbrains.kotlin.idea.stubindex.KotlinProbablyNothingPropertyShortNameIndex
+import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.resolve.lazy.ProbablyNothingCallableNames
 
 class ProbablyNothingCallableNamesImpl(project: Project) : ProbablyNothingCallableNames {
@@ -24,6 +25,9 @@ class ProbablyNothingCallableNamesImpl(project: Project) : ProbablyNothingCallab
 private inline fun createCachedValue(project: Project, crossinline names: () -> Collection<String>) =
     CachedValuesManager.getManager(project).createCachedValue(
         {
-            CachedValueProvider.Result.create(names(), KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker)
+            val outOfCodeBlockTracker = runReadAction {
+                KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+            }
+            CachedValueProvider.Result.create(names(), outOfCodeBlockTracker)
         }, false
     )

@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.frontend.di.createContainerForBodyResolve
 import org.jetbrains.kotlin.idea.caches.resolve.CodeFragmentAnalyzer
 import org.jetbrains.kotlin.idea.caches.resolve.util.analyzeControlFlow
 import org.jetbrains.kotlin.idea.caches.trackers.KotlinCodeBlockModificationListener
+import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.platform.TargetPlatform
 import org.jetbrains.kotlin.psi.*
@@ -65,9 +66,12 @@ class ResolveElementCache(
     private val fullResolveCache: CachedValue<MutableMap<KtElement, CachedFullResolve>> =
         CachedValuesManager.getManager(project).createCachedValue(
             CachedValueProvider<MutableMap<KtElement, CachedFullResolve>> {
+                val outOfCodeBlockTracker = runReadAction {
+                    KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+                }
                 CachedValueProvider.Result.create(
                     ContainerUtil.createConcurrentWeakKeySoftValueMap<KtElement, CachedFullResolve>(),
-                    KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker,
+                    outOfCodeBlockTracker,
                     resolveSession.exceptionTracker
                 )
             },

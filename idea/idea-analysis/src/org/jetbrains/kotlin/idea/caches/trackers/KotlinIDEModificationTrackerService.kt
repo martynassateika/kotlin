@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.ModificationTracker
 import com.intellij.psi.util.PsiModificationTracker
 import org.jetbrains.kotlin.analyzer.KotlinModificationTrackerService
+import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.psi.KtFile
 
 class KotlinIDEModificationTrackerService(project: Project) :
@@ -17,7 +18,12 @@ class KotlinIDEModificationTrackerService(project: Project) :
     override val modificationTracker: ModificationTracker = PsiModificationTracker.SERVICE.getInstance(project)
 
     override val outOfBlockModificationTracker: ModificationTracker =
-        KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+        runReadAction {
+            if (!project.isDisposed)
+                KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+            else
+                ModificationTracker.NEVER_CHANGED
+        }
 
     override fun fileModificationTracker(file: KtFile): ModificationTracker =
         file.perFileModificationTracker

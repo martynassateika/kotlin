@@ -12,6 +12,7 @@ import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.roots.ModuleRootModificationUtil
+import com.intellij.openapi.util.ModificationTracker
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.impl.PsiModificationTrackerImpl
 import com.intellij.psi.util.PsiModificationTracker
@@ -35,6 +36,7 @@ import org.jetbrains.kotlin.idea.framework.JSLibraryKind
 import org.jetbrains.kotlin.idea.test.PluginTestCaseBase
 import org.jetbrains.kotlin.idea.test.allKotlinFiles
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
+import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.idea.util.application.runWriteAction
 import org.jetbrains.kotlin.idea.util.projectStructure.sdk
 import org.jetbrains.kotlin.samWithReceiver.SamWithReceiverCommandLineProcessor.Companion.ANNOTATION_OPTION
@@ -162,7 +164,12 @@ open class MultiModuleHighlightingTest : AbstractMultiModuleHighlightingTest() {
                 PsiDocumentManager.getInstance(myProject).commitAllDocuments()
             }
 
-            val currentModCount = KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker.modificationCount
+            val currentModCount = runReadAction {
+                    if (!project.isDisposed)
+                        KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+                    else
+                        ModificationTracker.NEVER_CHANGED
+                }
 
             // Counter for m1 module should be unaffected by modification in m2
             assertEquals(afterFirstModification, KotlinModuleOutOfCodeBlockModificationTracker.getModificationCount(module1))

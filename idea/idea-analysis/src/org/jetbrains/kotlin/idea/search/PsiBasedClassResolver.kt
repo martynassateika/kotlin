@@ -69,9 +69,12 @@ class PsiBasedClassResolver @TestOnly constructor(private val targetClassFqName:
 
             val cachedValue = CachedValuesManager.getManager(target.project).createCachedValue(
                 {
+                    val outOfCodeBlockTracker = runReadAction {
+                        KotlinCodeBlockModificationListener.getInstance(target.project).kotlinOutOfCodeBlockTracker
+                    }
                     CachedValueProvider.Result(
                         PsiBasedClassResolver(target),
-                        KotlinCodeBlockModificationListener.getInstance(target.project).kotlinOutOfCodeBlockTracker
+                        outOfCodeBlockTracker
                     )
                 }, false
             )

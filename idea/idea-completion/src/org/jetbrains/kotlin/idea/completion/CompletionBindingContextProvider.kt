@@ -19,6 +19,7 @@ import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.idea.analysis.analyzeInContext
 import org.jetbrains.kotlin.idea.caches.trackers.KotlinCodeBlockModificationListener
 import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
+import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.idea.util.getResolutionScope
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtElement
@@ -76,10 +77,10 @@ class CompletionBindingContextProvider(project: Project) {
 
     private var prevCompletionDataCache: CachedValue<DataHolder> = CachedValuesManager.getManager(project).createCachedValue(
         {
-            CachedValueProvider.Result.create(
-                DataHolder(),
+            val outOfCodeBlockTracker = runReadAction {
                 KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
-            )
+            }
+            CachedValueProvider.Result.create(DataHolder(), outOfCodeBlockTracker)
         },
         false
     )

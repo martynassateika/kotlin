@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.idea.caches.resolve
 
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.ModificationTracker
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
@@ -17,6 +18,7 @@ import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.idea.caches.project.*
 import org.jetbrains.kotlin.idea.caches.project.IdeaModuleInfo
 import org.jetbrains.kotlin.idea.caches.trackers.KotlinCodeBlockModificationListener
+import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.resolve.CompositeBindingContext
@@ -58,9 +60,14 @@ internal class ProjectResolutionFacade(
                 }
             }
 
-            val allDependencies = resolverForProjectDependencies + listOf(
-                KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
-            )
+            val kotlinOutOfCodeBlockTracker = runReadAction {
+                if (!project.isDisposed)
+                    KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+                else
+                    ModificationTracker.NEVER_CHANGED
+            }
+
+            val allDependencies = resolverForProjectDependencies + listOf(kotlinOutOfCodeBlockTracker)
             CachedValueProvider.Result.create(results, allDependencies)
         }, false
     )

@@ -6,6 +6,7 @@
 package org.jetbrains.kotlin.idea.caches.trackers
 
 import com.intellij.lang.ASTNode
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.ModificationTracker
@@ -325,8 +326,15 @@ class KotlinCodeBlockModificationListener(
             KtScriptInitializer::class.java
         )
 
-        fun getInstance(project: Project): KotlinCodeBlockModificationListener =
-            project.getComponent(KotlinCodeBlockModificationListener::class.java)
+        fun getInstance(project: Project): KotlinCodeBlockModificationListener {
+            ApplicationManager.getApplication().assertReadAccessAllowed()
+            if(!project.isDisposed) {
+                return project.getComponent(KotlinCodeBlockModificationListener::class.java)
+                    ?: throw IllegalStateException("Component is null on a non-disposed project.")
+            } else {
+                throw Exception("This function expect call-site to check project.isDisposed() before.")
+            }
+        }
     }
 }
 
