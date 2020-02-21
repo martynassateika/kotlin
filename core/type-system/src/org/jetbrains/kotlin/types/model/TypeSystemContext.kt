@@ -154,6 +154,7 @@ interface TypeSystemInferenceExtensionContext : TypeSystemContext, TypeSystemBui
 
     fun CapturedTypeMarker.typeConstructorProjection(): TypeArgumentMarker
     fun CapturedTypeMarker.typeParameter(): TypeParameterMarker?
+    fun CapturedTypeMarker.withNotNullProjection(): KotlinTypeMarker
 
     fun DefinitelyNotNullTypeMarker.original(): SimpleTypeMarker
 
@@ -196,6 +197,8 @@ interface TypeSystemContext : TypeSystemOptimizationContext {
     fun CapturedTypeMarker.typeConstructor(): CapturedTypeConstructorMarker
     fun CapturedTypeMarker.captureStatus(): CaptureStatus
     fun CapturedTypeConstructorMarker.projection(): TypeArgumentMarker
+
+    fun CapturedTypeMarker.isProjectionNotNull() = false
 
     fun KotlinTypeMarker.argumentsCount(): Int
     fun KotlinTypeMarker.getArgument(index: Int): TypeArgumentMarker

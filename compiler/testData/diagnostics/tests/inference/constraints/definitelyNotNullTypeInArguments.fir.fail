@@ -1,0 +1,2 @@
+Failures detected in FirBodyResolveTransformerAdapter, file: /definitelyNotNullTypeInArguments.fir.kt
+Cause: java.lang.RuntimeException: While resolving call foo0#(R|<local>/x|, R?C|/Bar.Bar|())

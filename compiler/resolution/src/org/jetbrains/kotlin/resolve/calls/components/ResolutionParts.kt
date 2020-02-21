@@ -285,6 +285,140 @@ internal object CheckExplicitReceiverKindConsistency : ResolutionPart() {
     }
 }
 
+internal object CollectionTypeVariableUsagesInfo : ResolutionPart() {
+    private val KotlinType.isComputed get() = this !is WrappedType || isComputed()
+
+    private fun isContainedInInvariantOrContravariantPositions(
+        checkingType: TypeConstructor,
+        baseType: KotlinType?,
+        wasOutVariance: Boolean = true
+    ): Boolean {
+        if (baseType == null || !baseType.isComputed) return false
+
+        val declaredTypeParameters = baseType.constructor.parameters
+        var argumentsIndex = 0
+
+        return declaredTypeParameters.size >= baseType.arguments.size && baseType.arguments.any {
+            val isEffectiveTopLevelOutVariance =
+                wasOutVariance && (declaredTypeParameters[argumentsIndex].variance == Variance.OUT_VARIANCE || it.projectionKind == Variance.OUT_VARIANCE)
+
+            argumentsIndex++
+            if (it.isStarProjection) return@any false
+
+            (it.type.constructor == checkingType && !isEffectiveTopLevelOutVariance)
+                    || isContainedInInvariantOrContravariantPositions(checkingType, it.type, isEffectiveTopLevelOutVariance)
+        }
+    }
+
+    private fun isContainedInInvariantOrContravariantPositionsAmongTypeParameters(
+        checkingType: TypeConstructor,
+        typeParameters: List<TypeParameterDescriptor>
+    ) = typeParameters.any { it.variance != Variance.OUT_VARIANCE && it.typeConstructor == checkingType }
+
+    /*
+     * checkingType = T, declaration = `fun <T, K: T, L: T> foo() {}` => K, L
+     * checkingType = T, declaration = `fun <T, K: T, L: K> foo() {}` => K, L
+     */
+    private fun getDependentTypeParameters(
+        typeParameters: List<TypeParameterDescriptor>,
+        checkingType: TypeConstructor
+    ): List<Pair<TypeConstructor, KotlinType?>>? {
+        val dependentTypeParameters = typeParameters.mapNotNull { descriptor ->
+            if (descriptor.upperBounds.isEmpty()) return@mapNotNull null
+
+            val upperBounds = descriptor.upperBounds
+
+            if (upperBounds.first().constructor == checkingType) {
+                descriptor.typeConstructor to null
+            } else {
+                val suitableUpperBound = upperBounds.find { upperBound -> upperBound.contains { it.constructor == checkingType } }
+                if (suitableUpperBound != null) descriptor.typeConstructor to suitableUpperBound else null
+            }
+        }
+
+        if (dependentTypeParameters.isEmpty()) return null
+
+        return dependentTypeParameters + dependentTypeParameters.mapNotNull { (typeConstructor, _) ->
+            if (typeConstructor != checkingType) getDependentTypeParameters(typeParameters, typeConstructor) else null
+        }.flatten()
+    }
+
+    /*
+     * checkingType = T, declaration = `fun <K, T: K> foo() {}` => K
+     * checkingType = T, declaration = `fun <O, D: T, M, S: M, K: S, T: K> foo() {}` => K, S, M
+     */
+    private fun getDependingOnTypeParameters(
+        typeParameters: List<TypeParameterDescriptor>,
+        checkingType: TypeConstructor
+    ): List<TypeConstructor>? {
+        val typeParameterTypeConstructors = typeParameters.map { it.typeConstructor }
+        val dependentTypeParameterConstructors =
+            typeParameters.firstOrNull { it.typeConstructor == checkingType }?.upperBounds
+                ?.firstOrNull { it.constructor in typeParameterTypeConstructors }?.constructor ?: return null
+        val dependentTypeParameterConstructorsOnDepth = getDependingOnTypeParameters(typeParameters, dependentTypeParameterConstructors)
+            ?: return listOf(dependentTypeParameterConstructors)
+
+        return dependentTypeParameterConstructorsOnDepth + dependentTypeParameterConstructors
+    }
+
+    private fun isContainedInInvariantOrContravariantPositionsAmongUpperBound(
+        checkingType: TypeConstructor,
+        dependentTypeParameters: List<Pair<TypeConstructor, KotlinType?>>?
+    ): Boolean {
+        var dependentType = checkingType
+
+        return dependentTypeParameters?.any { (typeConstructor, upperBound) ->
+            val isContainedOrNoUpperBound = upperBound == null || isContainedInInvariantOrContravariantPositions(dependentType, upperBound)
+            dependentType = typeConstructor
+            isContainedOrNoUpperBound
+        } == true
+    }
+
+    private fun isContainedInInvariantOrContravariantPositionsWithDependencies(
+        checkingType: TypeConstructor?,
+        declarationDescriptor: DeclarationDescriptor?
+    ): Boolean {
+        if (checkingType == null || declarationDescriptor !is CallableDescriptor)
+            return false
+
+        val typeParameters = declarationDescriptor.typeParameters
+        val dependentTypeParameters = getDependentTypeParameters(typeParameters, checkingType)
+        val dependingOnTypeParameter = getDependingOnTypeParameters(typeParameters, checkingType)
+        val returnType = declarationDescriptor.returnType
+        val isContainedAmongUpperBounds =
+            isContainedInInvariantOrContravariantPositionsAmongUpperBound(checkingType, dependentTypeParameters)
+
+        return isContainedInInvariantOrContravariantPositions(checkingType, returnType) ||
+                dependingOnTypeParameter?.any { isContainedInInvariantOrContravariantPositions(it, returnType) } == true ||
+                dependentTypeParameters?.any { (dependentType, upperBound) ->
+                    val isContainedInReturnType = isContainedInInvariantOrContravariantPositions(dependentType, returnType)
+
+                    isContainedInReturnType || (upperBound != null && isContainedAmongUpperBounds)
+                } == true
+    }
+
+    private fun TypeVariableFromCallableDescriptor.recordInfoAboutTypeVariableUsagesAsInvariantOrContravariantParameter() {
+        freshTypeConstructor.usagesInfo =
+            TypeVariableTypeConstructor.TypeVariableUsagesInfo(isContainedInInvariantOrContravariantPositions = true)
+    }
+
+    override fun KotlinResolutionCandidate.process(workIndex: Int) {
+        resolvedCall.freshVariablesSubstitutor.freshVariables.forEach {
+            val typeConstructor = it.originalTypeParameter.typeConstructor
+
+            if (resolvedCall.candidateDescriptor is ClassConstructorDescriptor) {
+                val typeParameters = resolvedCall.candidateDescriptor.containingDeclaration.declaredTypeParameters
+
+                if (isContainedInInvariantOrContravariantPositionsAmongTypeParameters(typeConstructor, typeParameters)) {
+                    it.recordInfoAboutTypeVariableUsagesAsInvariantOrContravariantParameter()
+                }
+            } else if (isContainedInInvariantOrContravariantPositionsWithDependencies(typeConstructor, candidateDescriptor)) {
+                it.recordInfoAboutTypeVariableUsagesAsInvariantOrContravariantParameter()
+            }
+        }
+    }
+}
+
 private fun KotlinResolutionCandidate.resolveKotlinArgument(
     argument: KotlinCallArgument,
     candidateParameter: ParameterDescriptor?,
