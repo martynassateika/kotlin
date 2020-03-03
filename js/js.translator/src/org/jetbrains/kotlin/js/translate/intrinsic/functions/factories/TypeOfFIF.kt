@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.js.translate.expression.ExpressionVisitor
 import org.jetbrains.kotlin.js.translate.intrinsic.functions.basic.FunctionIntrinsic
 import org.jetbrains.kotlin.js.translate.utils.getReferenceToJsClass
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameUnsafe
+import org.jetbrains.kotlin.resolve.isRecursiveInlineClassType
 import org.jetbrains.kotlin.types.*
 
 object TypeOfFIF : FunctionIntrinsicFactory {
@@ -33,23 +34,30 @@ object TypeOfFIF : FunctionIntrinsicFactory {
 }
 
 class KTypeConstructor(val context: TranslationContext) {
+//    private val cache = mutableMapOf<KotlinType, Box<JsExpression>>()
+//    private val cache = mutableMapOf<KotlinType, JsExpression>()
+    // createType(createType())
+
     fun callHelperFunction(name: String, vararg arguments: JsExpression) =
         JsInvocation(context.getReferenceToIntrinsic(name), *arguments)
 
-    fun createKType(type: KotlinType): JsExpression {
+    fun createKType(type: KotlinType): JsExpression = createKType(type, hashSetOf())
+    private fun createKType(type: KotlinType, visited: MutableSet<KotlinType>): JsExpression {
         val unwrappedType = type.unwrap()
-        if (unwrappedType is SimpleType)
-            return createSimpleKType(unwrappedType)
-        if (unwrappedType is DynamicType)
-            return createDynamicType()
-        error("Unexpected type $type")
+        if (!visited.add(unwrappedType)) return JsNullLiteral()
+
+        return when (unwrappedType) {
+            is SimpleType -> createSimpleKType(unwrappedType, visited)
+            is DynamicType -> createDynamicType()
+            else -> error("Unexpected type $type")
+        }
     }
 
     private fun createDynamicType(): JsExpression {
         return callHelperFunction(Namer.CREATE_DYNAMIC_KTYPE)
     }
 
-    private fun createSimpleKType(type: SimpleType): JsExpression {
+    private fun createSimpleKType(type: SimpleType, visited: MutableSet<KotlinType>): JsExpression {
         val typeConstructor = type.constructor
         val classifier = typeConstructor.declarationDescriptor
 
@@ -68,7 +76,7 @@ class KTypeConstructor(val context: TranslationContext) {
         val kClassifier =
             when {
                 classifier != null -> {
-                    createKClassifier(classifier)
+                    createKClassifier(classifier, visited)
                 }
                 typeConstructor is IntersectionTypeConstructor -> {
                     val getKClassA = context.getNameForIntrinsic("getKClassM")
@@ -82,7 +90,7 @@ class KTypeConstructor(val context: TranslationContext) {
                     error("Can't get KClass from $type")
                 }
             }
-        val arguments = JsArrayLiteral(type.arguments.map { createKTypeProjection(it) })
+        val arguments = JsArrayLiteral(type.arguments.map { createKTypeProjection(it, visited) })
         val isMarkedNullable = JsBooleanLiteral(type.isMarkedNullable)
         return callHelperFunction(
             Namer.CREATE_KTYPE,
@@ -92,8 +100,8 @@ class KTypeConstructor(val context: TranslationContext) {
         )
     }
 
-    fun createKTypeProjection(tp: TypeProjection): JsExpression {
-        if (tp.isStarProjection) {
+    private fun createKTypeProjection(tp: TypeProjection, visited: MutableSet<KotlinType>): JsExpression {
+        if (tp.isStarProjection || tp.type in visited) {
             return callHelperFunction(Namer.GET_START_KTYPE_PROJECTION)
         }
 
@@ -103,21 +111,22 @@ class KTypeConstructor(val context: TranslationContext) {
             Variance.OUT_VARIANCE -> Namer.CREATE_COVARIANT_KTYPE_PROJECTION
         }
 
-        val kType = createKType(tp.type)
+        val kType = createKType(tp.type, visited)
         return callHelperFunction(factoryName, kType)
 
     }
 
-    fun createKClassifier(classifier: ClassifierDescriptor): JsExpression =
+    private fun createKClassifier(classifier: ClassifierDescriptor, visited: MutableSet<KotlinType>): JsExpression =
         when (classifier) {
-            is TypeParameterDescriptor -> createKTypeParameter(classifier)
+            is TypeParameterDescriptor -> createKTypeParameter(classifier, visited)
             else -> ExpressionVisitor.getObjectKClass(context, classifier)
         }
 
-    fun createKTypeParameter(typeParameter: TypeParameterDescriptor): JsExpression {
+    private fun createKTypeParameter(typeParameter: TypeParameterDescriptor, visited: MutableSet<KotlinType>): JsExpression {
         val name = JsStringLiteral(typeParameter.name.asString())
-        val upperBounds = JsArrayLiteral(typeParameter.upperBounds.map { createKType(it) })
+        val upperBounds = JsArrayLiteral(typeParameter.upperBounds.map { createKType(it, visited) })
         val variance = when (typeParameter.variance) {
+            // TODO use consts, enums, numbers???
             Variance.INVARIANT -> JsStringLiteral("invariant")
             Variance.IN_VARIANCE -> JsStringLiteral("in")
             Variance.OUT_VARIANCE -> JsStringLiteral("out")
