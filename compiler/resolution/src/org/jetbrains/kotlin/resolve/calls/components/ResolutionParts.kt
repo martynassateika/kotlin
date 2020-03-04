@@ -289,25 +289,28 @@ internal object CollectionTypeVariableUsagesInfo : ResolutionPart() {
     private val KotlinType.isComputed get() = this !is WrappedType || isComputed()
 
     private fun isContainedInInvariantOrContravariantPositions(
-        checkingType: TypeConstructor,
+        variableTypeConstructor: TypeConstructor,
         baseType: KotlinType?,
         wasOutVariance: Boolean = true
     ): Boolean {
         if (baseType == null || !baseType.isComputed) return false
 
         val declaredTypeParameters = baseType.constructor.parameters
-        var argumentsIndex = 0
 
-        return declaredTypeParameters.size >= baseType.arguments.size && baseType.arguments.any {
-            val isEffectiveTopLevelOutVariance =
-                wasOutVariance && (declaredTypeParameters[argumentsIndex].variance == Variance.OUT_VARIANCE || it.projectionKind == Variance.OUT_VARIANCE)
+        for ((argumentsIndex, argument) in baseType.arguments.withIndex()) {
+            if (argument.isStarProjection) continue
 
-            argumentsIndex++
-            if (it.isStarProjection) return@any false
+            val currentEffectiveVariance =
+                declaredTypeParameters[argumentsIndex].variance == Variance.OUT_VARIANCE || argument.projectionKind == Variance.OUT_VARIANCE
+            val effectiveVarianceFromTopLevel = wasOutVariance && currentEffectiveVariance
 
-            (it.type.constructor == checkingType && !isEffectiveTopLevelOutVariance)
-                    || isContainedInInvariantOrContravariantPositions(checkingType, it.type, isEffectiveTopLevelOutVariance)
+            if (argument.type.constructor == variableTypeConstructor && !effectiveVarianceFromTopLevel) return true
+
+            if (isContainedInInvariantOrContravariantPositions(variableTypeConstructor, argument.type, effectiveVarianceFromTopLevel))
+                return true
         }
+
+        return false
     }
 
     private fun isContainedInInvariantOrContravariantPositionsAmongTypeParameters(
@@ -375,20 +378,20 @@ internal object CollectionTypeVariableUsagesInfo : ResolutionPart() {
     }
 
     private fun isContainedInInvariantOrContravariantPositionsWithDependencies(
-        checkingType: TypeConstructor?,
+        variableTypeConstructor: TypeConstructor?,
         declarationDescriptor: DeclarationDescriptor?
     ): Boolean {
-        if (checkingType == null || declarationDescriptor !is CallableDescriptor)
+        if (variableTypeConstructor == null || declarationDescriptor !is CallableDescriptor)
             return false
 
         val typeParameters = declarationDescriptor.typeParameters
-        val dependentTypeParameters = getDependentTypeParameters(typeParameters, checkingType)
-        val dependingOnTypeParameter = getDependingOnTypeParameters(typeParameters, checkingType)
+        val dependentTypeParameters = getDependentTypeParameters(typeParameters, variableTypeConstructor)
+        val dependingOnTypeParameter = getDependingOnTypeParameters(typeParameters, variableTypeConstructor)
         val returnType = declarationDescriptor.returnType
         val isContainedAmongUpperBounds =
-            isContainedInInvariantOrContravariantPositionsAmongUpperBound(checkingType, dependentTypeParameters)
+            isContainedInInvariantOrContravariantPositionsAmongUpperBound(variableTypeConstructor, dependentTypeParameters)
 
-        return isContainedInInvariantOrContravariantPositions(checkingType, returnType) ||
+        return isContainedInInvariantOrContravariantPositions(variableTypeConstructor, returnType) ||
                 dependingOnTypeParameter?.any { isContainedInInvariantOrContravariantPositions(it, returnType) } == true ||
                 dependentTypeParameters?.any { (dependentType, upperBound) ->
                     val isContainedInReturnType = isContainedInInvariantOrContravariantPositions(dependentType, returnType)
@@ -403,17 +406,17 @@ internal object CollectionTypeVariableUsagesInfo : ResolutionPart() {
     }
 
     override fun KotlinResolutionCandidate.process(workIndex: Int) {
-        resolvedCall.freshVariablesSubstitutor.freshVariables.forEach {
-            val typeConstructor = it.originalTypeParameter.typeConstructor
+        resolvedCall.freshVariablesSubstitutor.freshVariables.forEach { variable ->
+            val typeConstructor = variable.originalTypeParameter.typeConstructor
 
             if (resolvedCall.candidateDescriptor is ClassConstructorDescriptor) {
                 val typeParameters = resolvedCall.candidateDescriptor.containingDeclaration.declaredTypeParameters
 
                 if (isContainedInInvariantOrContravariantPositionsAmongTypeParameters(typeConstructor, typeParameters)) {
-                    it.recordInfoAboutTypeVariableUsagesAsInvariantOrContravariantParameter()
+                    variable.recordInfoAboutTypeVariableUsagesAsInvariantOrContravariantParameter()
                 }
             } else if (isContainedInInvariantOrContravariantPositionsWithDependencies(typeConstructor, candidateDescriptor)) {
-                it.recordInfoAboutTypeVariableUsagesAsInvariantOrContravariantParameter()
+                variable.recordInfoAboutTypeVariableUsagesAsInvariantOrContravariantParameter()
             }
         }
     }

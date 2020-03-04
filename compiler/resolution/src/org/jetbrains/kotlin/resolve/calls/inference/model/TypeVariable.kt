@@ -50,6 +50,7 @@ class TypeVariableTypeConstructor(private val builtIns: KotlinBuiltIns, val debu
 
     override fun toString() = "TypeVariable($debugName)"
 
+    // make as flag
     var usagesInfo: TypeVariableUsagesInfo? = null
 
     class TypeVariableUsagesInfo(val isContainedInInvariantOrContravariantPositions: Boolean = false)
