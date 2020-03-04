@@ -138,8 +138,8 @@ class ClassReferenceLowering(val context: JsIrBackendContext) : BodyLoweringPass
             }
         }
 
-    private fun createKType(type: IrType, visited: MutableSet<IrType>): IrExpression {
-        if (!visited.add(type)) return IrConstImpl.constNull(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.nothingNType)
+    private fun createKType(type: IrType, visited: MutableSet<IrTypeParameter>): IrExpression {
+//        if (!visited.add(type)) return IrConstImpl.constNull(UNDEFINED_OFFSET, UNDEFINED_OFFSET, context.irBuiltIns.nothingNType)
 
         if (type is IrSimpleType)
             return createSimpleKType(type, visited)
@@ -152,7 +152,7 @@ class ClassReferenceLowering(val context: JsIrBackendContext) : BodyLoweringPass
         return buildCall(context.intrinsics.createDynamicKType!!)
     }
 
-    private fun createSimpleKType(type: IrSimpleType, visited: MutableSet<IrType>): IrExpression {
+    private fun createSimpleKType(type: IrSimpleType, visited: MutableSet<IrTypeParameter>): IrExpression {
         val classifier: IrClassifierSymbol = type.classifier
 
         // TODO: Check why do we have un-substituted reified parameters
@@ -176,8 +176,8 @@ class ClassReferenceLowering(val context: JsIrBackendContext) : BodyLoweringPass
         )
     }
 
-    private fun createKTypeProjection(tp: IrTypeArgument, visited: MutableSet<IrType>): IrExpression {
-        if (tp !is IrTypeProjection || tp.type in visited) {
+    private fun createKTypeProjection(tp: IrTypeArgument, visited: MutableSet<IrTypeParameter>): IrExpression {
+        if (tp !is IrTypeProjection/* || tp.type in visited*/) {
             return buildCall(context.intrinsics.getStarKTypeProjection!!)
         }
 
@@ -192,13 +192,17 @@ class ClassReferenceLowering(val context: JsIrBackendContext) : BodyLoweringPass
 
     }
 
-    private fun createKClassifier(classifier: IrClassifierSymbol, visited: MutableSet<IrType>): IrExpression =
+    private fun createKClassifier(classifier: IrClassifierSymbol, visited: MutableSet<IrTypeParameter>): IrExpression =
         when (classifier) {
             is IrTypeParameterSymbol -> createKTypeParameter(classifier.owner, visited)
             else -> callGetKClass(typeArgument = classifier.defaultType)
         }
 
-    private fun createKTypeParameter(typeParameter: IrTypeParameter, visited: MutableSet<IrType>): IrExpression {
+    private fun createKTypeParameter(typeParameter: IrTypeParameter, visited: MutableSet<IrTypeParameter>): IrExpression {
+        if (typeParameter in visited) return buildCall(context.intrinsics.getStarKTypeProjection!!)
+
+        visited.add(typeParameter)
+
         val name = JsIrBuilder.buildString(context.irBuiltIns.stringType, typeParameter.name.asString())
         val upperBounds = typeParameter.superTypes.map { createKType(it, visited) }.toJsArrayLiteral(
             context,
@@ -222,7 +226,9 @@ class ClassReferenceLowering(val context: JsIrBackendContext) : BodyLoweringPass
             name,
             upperBounds,
             variance
-        )
+        ).also {
+            visited.remove(typeParameter)
+        }
     }
 
     override fun lower(irBody: IrBody, container: IrDeclaration) {
