@@ -1,0 +1,3 @@
+<idea-plugin>
+  <depends>marked.as.incompatible.using.non.existent.dependency</depends>
+</idea-plugin>
