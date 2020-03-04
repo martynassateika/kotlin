@@ -42,9 +42,9 @@ class KTypeConstructor(val context: TranslationContext) {
         JsInvocation(context.getReferenceToIntrinsic(name), *arguments)
 
     fun createKType(type: KotlinType): JsExpression = createKType(type, hashSetOf())
-    private fun createKType(type: KotlinType, visited: MutableSet<KotlinType>): JsExpression {
+    private fun createKType(type: KotlinType, visited: MutableSet<TypeParameterDescriptor>): JsExpression {
         val unwrappedType = type.unwrap()
-        if (!visited.add(unwrappedType)) return JsNullLiteral()
+//        if (!visited.add(unwrappedType)) return JsNullLiteral()
 
         return when (unwrappedType) {
             is SimpleType -> createSimpleKType(unwrappedType, visited)
@@ -57,7 +57,7 @@ class KTypeConstructor(val context: TranslationContext) {
         return callHelperFunction(Namer.CREATE_DYNAMIC_KTYPE)
     }
 
-    private fun createSimpleKType(type: SimpleType, visited: MutableSet<KotlinType>): JsExpression {
+    private fun createSimpleKType(type: SimpleType, visited: MutableSet<TypeParameterDescriptor>): JsExpression {
         val typeConstructor = type.constructor
         val classifier = typeConstructor.declarationDescriptor
 
@@ -100,8 +100,8 @@ class KTypeConstructor(val context: TranslationContext) {
         )
     }
 
-    private fun createKTypeProjection(tp: TypeProjection, visited: MutableSet<KotlinType>): JsExpression {
-        if (tp.isStarProjection || tp.type in visited) {
+    private fun createKTypeProjection(tp: TypeProjection, visited: MutableSet<TypeParameterDescriptor>): JsExpression {
+        if (tp.isStarProjection/* || tp.type in visited*/) {
             return callHelperFunction(Namer.GET_START_KTYPE_PROJECTION)
         }
 
@@ -116,33 +116,45 @@ class KTypeConstructor(val context: TranslationContext) {
 
     }
 
-    private fun createKClassifier(classifier: ClassifierDescriptor, visited: MutableSet<KotlinType>): JsExpression =
+    private fun createKClassifier(classifier: ClassifierDescriptor, visited: MutableSet<TypeParameterDescriptor>): JsExpression =
         when (classifier) {
             is TypeParameterDescriptor -> createKTypeParameter(classifier, visited)
             else -> ExpressionVisitor.getObjectKClass(context, classifier)
         }
 
-    private fun createKTypeParameter(typeParameter: TypeParameterDescriptor, visited: MutableSet<KotlinType>): JsExpression {
-        val name = JsStringLiteral(typeParameter.name.asString())
-        val upperBounds = JsArrayLiteral(typeParameter.upperBounds.map { createKType(it, visited) })
-        val variance = when (typeParameter.variance) {
-            // TODO use consts, enums, numbers???
-            Variance.INVARIANT -> JsStringLiteral("invariant")
-            Variance.IN_VARIANCE -> JsStringLiteral("in")
-            Variance.OUT_VARIANCE -> JsStringLiteral("out")
-        }
-        if (typeParameter.isReified) {
-            val kClassName = context.getNameForIntrinsic(SpecialFunction.GET_REIFIED_TYPE_PARAMETER_KTYPE.suggestedName)
-            kClassName.specialFunction = SpecialFunction.GET_REIFIED_TYPE_PARAMETER_KTYPE
+    private fun createKTypeParameter(typeParameter: TypeParameterDescriptor, visited: MutableSet<TypeParameterDescriptor>): JsExpression {
+        fun process(): JsExpression {
+            val name = JsStringLiteral(typeParameter.name.asString())
+            val upperBounds = JsArrayLiteral(typeParameter.upperBounds.map { createKType(it, visited) })
+            val variance = when (typeParameter.variance) {
+                // TODO use consts, enums, numbers???
+                Variance.INVARIANT -> JsStringLiteral("invariant")
+                Variance.IN_VARIANCE -> JsStringLiteral("in")
+                Variance.OUT_VARIANCE -> JsStringLiteral("out")
+            }
+            if (typeParameter.isReified) {
+                val kClassName = context.getNameForIntrinsic(SpecialFunction.GET_REIFIED_TYPE_PARAMETER_KTYPE.suggestedName)
+                kClassName.specialFunction = SpecialFunction.GET_REIFIED_TYPE_PARAMETER_KTYPE
 
-            return JsInvocation(kClassName.makeRef(), getReferenceToJsClass(typeParameter, context))
+                return JsInvocation(kClassName.makeRef(), getReferenceToJsClass(typeParameter, context))
+            }
+
+            return callHelperFunction(
+                Namer.CREATE_KTYPE_PARAMETER,
+                name,
+                upperBounds,
+                variance
+            )
         }
 
-        return callHelperFunction(
-            Namer.CREATE_KTYPE_PARAMETER,
-            name,
-            upperBounds,
-            variance
-        )
+        if (typeParameter in visited) {
+            return callHelperFunction(Namer.GET_START_KTYPE_PROJECTION)
+        }
+
+        visited.add(typeParameter)
+        val r = process()
+        visited.remove(typeParameter)
+
+        return r
     }
 }
