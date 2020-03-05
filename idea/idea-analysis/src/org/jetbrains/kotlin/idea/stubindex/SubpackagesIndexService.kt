@@ -22,15 +22,16 @@ class SubpackagesIndexService(private val project: Project) {
 
     private val cachedValue = CachedValuesManager.getManager(project).createCachedValue(
         {
-            runReadAction {
+            val codeBlockModificationListener: KotlinCodeBlockModificationListener = runReadAction {
                 if (!project.isDisposed)
                     CachedValueProvider.Result(
                         SubpackagesIndex(KotlinExactPackagesIndex.getInstance().getAllKeys(project)),
-                        KotlinCodeBlockModificationListener.getInstance(project).kotlinOutOfCodeBlockTracker
+                        KotlinCodeBlockModificationListener.getInstance(project)
                     )
                 else
                     null
             }
+            codeBlockModificationListener.kotlinOutOfCodeBlockTracker
         },
         false
     )

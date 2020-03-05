@@ -24,7 +24,13 @@ import java.util.concurrent.ConcurrentHashMap
 class KotlinCodeHintsModel(val project: Project) : EditorFactoryListener {
     companion object {
         fun getInstance(project: Project): KotlinCodeHintsModel =
-            project.getComponent(KotlinCodeHintsModel::class.java) ?: error("Component `KotlinCodeHintsModel` is expected to be registered")
+            runReadAction {
+                if (!project.isDisposed)
+                    project.getComponent(KotlinCodeHintsModel::class.java) ?: error("Component `KotlinCodeHintsModel` is expected to be registered")
+                else
+                    null
+            }
+
     }
 
     private class DocumentExtensionInfoModel(val document: Document) {

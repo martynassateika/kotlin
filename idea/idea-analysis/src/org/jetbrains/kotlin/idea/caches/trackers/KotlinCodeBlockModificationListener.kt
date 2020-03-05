@@ -7,6 +7,7 @@ package org.jetbrains.kotlin.idea.caches.trackers
 
 import com.intellij.lang.ASTNode
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.ModificationTracker
@@ -326,15 +327,80 @@ class KotlinCodeBlockModificationListener(
             KtScriptInitializer::class.java
         )
 
+//        fun getInstance(project: Project): KotlinCodeBlockModificationListener {
+//            ApplicationManager.getApplication().assertReadAccessAllowed()
+//            if(!project.isDisposed) {
+//                return project.getComponent(KotlinCodeBlockModificationListener::class.java)
+//                    ?: throw IllegalStateException("KotlinCodeBlockModificationListener is null on a non-disposed project.")
+//            } else {
+//                throw Exception("KotlinCodeBlockModificationListener.getInstance() is expected to check project.isDisposed() in advance")
+//            }
+//        }
+
+
+
+
+
+
+        fun sampleGetInstanceCall(project: Project) {
+            val customIncrement = runReadAction {
+                if (!project.isDisposed)
+                    getInstance(project)
+                else
+                    ModificationTracker.NEVER_CHANGED
+            }
+        }
+
         fun getInstance(project: Project): KotlinCodeBlockModificationListener {
             ApplicationManager.getApplication().assertReadAccessAllowed()
-            if(!project.isDisposed) {
+            if (!project.isDisposed) {
                 return project.getComponent(KotlinCodeBlockModificationListener::class.java)
                     ?: throw IllegalStateException("Component is null on a non-disposed project.")
             } else {
                 throw Exception("This function expect call-site to check project.isDisposed() before.")
             }
         }
+
+
+
+        fun sampleGetInstanceCall1(project: Project) {
+            getInstance1<KotlinCodeBlockModificationListener?>(project)?.customIncrement ?: ModificationTracker.NEVER_CHANGED
+        }
+
+        fun getInstance1(project: Project): KotlinCodeBlockModificationListener? {
+            val listener = project.getComponent(KotlinCodeBlockModificationListener::class.java)
+            if(listener == null) {
+                runReadAction {
+                    if (!project.isDisposed)
+                        throw IllegalStateException("Component is null on a non-disposed project.")
+                    else
+                        throw Exception("This function expect call-site to check project.isDisposed() before.") || return null
+                }
+            } else
+                return listener
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     }
 }
 
